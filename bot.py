@@ -33,10 +33,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 friendly_matches = {}  # {message_id: {"host": user_id, "players": []}}
 
 # ---------------------- /match ----------------------
-@bot.tree.command(
-    name="match", 
-    description="Send match schedule"
-)
+@bot.tree.command(name="match", description="Send match schedule")
 @app_commands.describe(
     team1="First team", 
     team2="Second team", 
@@ -175,39 +172,14 @@ async def leagueresult(interaction: discord.Interaction, team1: str, team2: str,
     await channel.send(embed=embed)
     await interaction.response.send_message("✅ League result posted!", ephemeral=True)
 
-# ---------------------- /friendly (Roblox link) ----------------------
-@bot.tree.command(name="friendly", description="Start a friendly match")
-@app_commands.describe(link="Roblox game link")
-async def friendly(interaction: discord.Interaction, link: str):
-    author = interaction.user
-    if HOST_ROLE_ID not in [role.id for role in author.roles]:
-        await interaction.response.send_message("❌ You need the host role!", ephemeral=True)
-        return
-
-    if not re.search(r"(roblox\.com|rbx\.gg)", link):
-        await interaction.response.send_message("❌ This is not a valid Roblox link!", ephemeral=True)
-        return
-
-    text = (
-        f"<@&{FRIENDLY_PING_ROLE_ID}>\n"
-        "🎮 **FRIENDLY MATCH ALERT!** 🎮\n\n"
-        f"🔥 Host: {author.mention}\n"
-        f"🌐 Game link: {link}\n"
-        "👥 Players needed: 7\n"
-        "📝 Join the game and have fun! 🎉"
-    )
-
-    channel = bot.get_channel(FRIENDLY_CHANNEL_ID)
-    await channel.send(text)
-    await interaction.response.send_message("✅ Friendly match announced!", ephemeral=True)
-
-# ---------------------- Авто-удаление сообщений с Roblox ----------------------
+# ---------------------- Авто-удаление и оформление сообщений с Roblox ----------------------
 @bot.event
 async def on_message(message):
     if message.author.bot:
         return
     if message.channel.id != FRIENDLY_CHANNEL_ID:
         return
+    # Проверка ссылки Roblox
     if re.search(r"(https?://)?(www\.)?(roblox\.com|rbx\.gg)/\S+", message.content):
         try:
             await message.delete()
