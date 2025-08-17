@@ -3,6 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 import datetime
 import os
+import re
 
 # ---------------------- Variables ----------------------
 TOKEN = os.environ.get("DISCORD_TOKEN")
@@ -183,7 +184,6 @@ async def friendly(interaction: discord.Interaction):
         )
         return
 
-    # Текстовое сообщение вместо embed
     text = (
         "✅ **FRIENDLY MATCH REMINDER** ✅\n\n"
         "**React to join!** Players needed: 7\n\n"
@@ -198,30 +198,12 @@ async def friendly(interaction: discord.Interaction):
     channel = bot.get_channel(FRIENDLY_CHANNEL_ID)
     msg = await channel.send(text)
 
-    # Сохраняем матч
     friendly_matches[msg.id] = {"host": author.id, "players": []}
 
     await interaction.response.send_message("✅ Friendly match created!", ephemeral=True)
 
-# ---------------------- Реакции для добавления игроков ----------------------
-@bot.event
-async def on_reaction_add(reaction, user):
-    if user.bot:
-        return
-
-    msg_id = reaction.message.id
-    if msg_id not in friendly_matches:
-        return
-
-    match = friendly_matches[msg_id]
-
-    if user.id in match["players"]:
-        return
-
-    match["players"].append(user.id)
-
-    # Обновляем сообщение с новым списком игроков
-    channel = reaction.message.channel
+# ---------------------- Update friendly message ----------------------
+async def update_friendly_message(message, match):
     players_mentions = ", ".join([f"<@{pid}>" for pid in match["players"]])
     players_needed = max(7 - len(match["players"]), 0)
     host_mention = f"<@{match['host']}>" if match["host"] else "None"
@@ -237,7 +219,66 @@ async def on_reaction_add(reaction, user):
         f"🎮 Players: {players_mentions or '—'}"
     )
 
-    await reaction.message.edit(content=text)
+    await message.edit(content=text)
+
+# ---------------------- Reactions ----------------------
+@bot.event
+async def on_reaction_add(reaction, user):
+    if user.bot:
+        return
+
+    msg_id = reaction.message.id
+    if msg_id not in friendly_matches:
+        return
+
+    match = friendly_matches[msg_id]
+
+    if user.id in match["players"]:
+        return
+
+    match["players"].append(user.id)
+    await update_friendly_message(reaction.message, match)
+
+@bot.event
+async def on_reaction_remove(reaction, user):
+    if user.bot:
+        return
+
+    msg_id = reaction.message.id
+    if msg_id not in friendly_matches:
+        return
+
+    match = friendly_matches[msg_id]
+
+    if user.id in match["players"]:
+        match["players"].remove(user.id)
+        await update_friendly_message(reaction.message, match)
+
+# ---------------------- Roblox link auto-post ----------------------
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+
+    if HOST_ROLE_ID not in [role.id for role in message.author.roles]:
+        await bot.process_commands(message)
+        return
+
+    if re.search(r'https?://(?:www\.)?roblox\.com/\S+', message.content):
+        await message.delete()
+
+        # Создаём новый матч с хостом
+        text = (
+            f"🔥 **FRIENDLY MATCH LINK** 🔥\n\n"
+            f"📅 Host: {message.author.mention}\n"
+            f"📌 Roblox link: {message.content}\n"
+            f"✅ React to join!"
+        )
+
+        new_msg = await message.channel.send(text)
+        friendly_matches[new_msg.id] = {"host": message.author.id, "players": []}
+
+    await bot.process_commands(message)
 
 # ---------------------- Bot Start ----------------------
 @bot.event
