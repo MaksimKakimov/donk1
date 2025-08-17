@@ -3,7 +3,6 @@ from discord import app_commands
 from discord.ext import commands
 import datetime
 import os
-import re
 
 # ---------------------- Variables ----------------------
 TOKEN = os.environ.get("DISCORD_TOKEN")
@@ -29,13 +28,11 @@ intents.reactions = True
 intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-friendly_matches = {}  # {message_id: {"host": user_id, "players": []}}
+friendly_matches = {}  # {message_id: {"host": user_id, "players": [], "positions": {}, "pos_msg_id": int}}
+POSITIONS = ["GK", "LB", "RB", "CB", "LW", "RW", "ST"]
 
 # ---------------------- /match command ----------------------
-@bot.tree.command(
-    name="match", 
-    description="Send match schedule"
-)
+@bot.tree.command(name="match", description="Send match schedule")
 @app_commands.describe(
     team1="First team", 
     team2="Second team", 
@@ -185,100 +182,96 @@ async def friendly(interaction: discord.Interaction):
         return
 
     text = (
-        "✅ **FRIENDLY MATCH REMINDER** ✅\n\n"
-        "**React to join!** Players needed: 7\n\n"
-        "**DETAILS:**\n"
-        f"📅 Date: Today\n"
-        f"⏰ Time: As soon as 7 players join\n"
-        f"👥 Players needed: 7\n"
+        "✅ **FRIENDLY MATCH** ✅\n\n"
         f"🔥 Host: {author.mention}\n"
+        f"👥 Players needed: 7\n"
         f"🎮 Players: —"
     )
 
     channel = bot.get_channel(FRIENDLY_CHANNEL_ID)
     msg = await channel.send(text)
-
-    friendly_matches[msg.id] = {"host": author.id, "players": []}
+    friendly_matches[msg.id] = {
+        "host": author.id,
+        "players": [],
+        "positions": {pos: None for pos in POSITIONS},
+        "pos_msg_id": None
+    }
 
     await interaction.response.send_message("✅ Friendly match created!", ephemeral=True)
 
-# ---------------------- Update friendly message ----------------------
-async def update_friendly_message(message, match):
-    players_mentions = ", ".join([f"<@{pid}>" for pid in match["players"]])
-    players_needed = max(7 - len(match["players"]), 0)
-    host_mention = f"<@{match['host']}>" if match["host"] else "None"
-
-    text = (
-        "✅ **FRIENDLY MATCH REMINDER** ✅\n\n"
-        "**React to join!** Players needed: 7\n\n"
-        "**DETAILS:**\n"
-        f"📅 Date: Today\n"
-        f"⏰ Time: As soon as 7 players join\n"
-        f"👥 Players needed: {players_needed}\n"
-        f"🔥 Host: {host_mention}\n"
-        f"🎮 Players: {players_mentions or '—'}"
-    )
-
-    await message.edit(content=text)
-
-# ---------------------- Reactions ----------------------
+# ---------------------- Реакции для добавления игроков ----------------------
 @bot.event
 async def on_reaction_add(reaction, user):
     if user.bot:
         return
-
     msg_id = reaction.message.id
     if msg_id not in friendly_matches:
         return
-
     match = friendly_matches[msg_id]
-
     if user.id in match["players"]:
         return
-
     match["players"].append(user.id)
-    await update_friendly_message(reaction.message, match)
 
+    # Обновляем сообщение о игроках
+    channel = reaction.message.channel
+    players_mentions = ", ".join([f"<@{pid}>" for pid in match["players"]])
+    players_needed = max(7 - len(match["players"]), 0)
+    host_mention = f"<@{match['host']}>"
+
+    text = (
+        "✅ **FRIENDLY MATCH** ✅\n\n"
+        f"🔥 Host: {host_mention}\n"
+        f"👥 Players needed: {players_needed}\n"
+        f"🎮 Players: {players_mentions or '—'}"
+    )
+    await reaction.message.edit(content=text)
+
+    # Если набрались 7 игроков — создаем сообщение с позициями
+    if len(match["players"]) == 7 and match["pos_msg_id"] is None:
+        pos_text = "**📌 Positions:**\n"
+        for i, pos in enumerate(POSITIONS):
+            pos_text += f"{pos}: <@{match['players'][i]}>\n"
+            match["positions"][pos] = match["players"][i]
+        pos_msg = await channel.send(pos_text)
+        match["pos_msg_id"] = pos_msg.id
+
+# ---------------------- Реакции для удаления игроков ----------------------
 @bot.event
 async def on_reaction_remove(reaction, user):
     if user.bot:
         return
-
     msg_id = reaction.message.id
     if msg_id not in friendly_matches:
         return
-
     match = friendly_matches[msg_id]
-
-    if user.id in match["players"]:
-        match["players"].remove(user.id)
-        await update_friendly_message(reaction.message, match)
-
-# ---------------------- Roblox link auto-post ----------------------
-@bot.event
-async def on_message(message):
-    if message.author.bot:
+    if user.id not in match["players"]:
         return
+    match["players"].remove(user.id)
 
-    if HOST_ROLE_ID not in [role.id for role in message.author.roles]:
-        await bot.process_commands(message)
-        return
+    # Обновляем сообщение о игроках
+    channel = reaction.message.channel
+    players_mentions = ", ".join([f"<@{pid}>" for pid in match["players"]])
+    players_needed = max(7 - len(match["players"]), 0)
+    host_mention = f"<@{match['host']}>"
 
-    if re.search(r'https?://(?:www\.)?roblox\.com/\S+', message.content):
-        await message.delete()
+    text = (
+        "✅ **FRIENDLY MATCH** ✅\n\n"
+        f"🔥 Host: {host_mention}\n"
+        f"👥 Players needed: {players_needed}\n"
+        f"🎮 Players: {players_mentions or '—'}"
+    )
+    await reaction.message.edit(content=text)
 
-        # Создаём новый матч с хостом
-        text = (
-            f"🔥 **FRIENDLY MATCH LINK** 🔥\n\n"
-            f"📅 Host: {message.author.mention}\n"
-            f"📌 Roblox link: {message.content}\n"
-            f"✅ React to join!"
-        )
-
-        new_msg = await message.channel.send(text)
-        friendly_matches[new_msg.id] = {"host": message.author.id, "players": []}
-
-    await bot.process_commands(message)
+    # Обновляем сообщение с позициями
+    if match["pos_msg_id"]:
+        pos_msg = await channel.fetch_message(match["pos_msg_id"])
+        pos_text = "**📌 Positions:**\n"
+        for pos in POSITIONS:
+            if match["positions"][pos] == user.id:
+                match["positions"][pos] = None
+            pid = match["positions"][pos]
+            pos_text += f"{pos}: {'<@' + str(pid) + '>' if pid else 'None'}\n"
+        await pos_msg.edit(content=pos_text)
 
 # ---------------------- Bot Start ----------------------
 @bot.event
