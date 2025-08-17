@@ -178,18 +178,66 @@ async def leagueresult(interaction: discord.Interaction, team1: str, team2: str,
 async def friendly(interaction: discord.Interaction):
     author = interaction.user
     if HOST_ROLE_ID not in [role.id for role in author.roles]:
-        await interaction.response.send_message("❌ You need the host role to start a friendly match.", ephemeral=True)
+        await interaction.response.send_message(
+            "❌ You need the host role to start a friendly match.", ephemeral=True
+        )
         return
 
-    embed = discord.Embed(title="✅ FRIENDLY MATCH REMINDER", color=0x1abc9c)
-    embed.add_field(name="✅ React to join!", value="Players needed: 7", inline=False)
-    embed.add_field(name="DETAILS", value="📅 Date: Today\n⏰ Time: As soon as 7 players join\n👥 Players needed: 7\n🔥 Host: None", inline=False)
+    # Текстовое сообщение вместо embed
+    text = (
+        "✅ **FRIENDLY MATCH REMINDER** ✅\n\n"
+        "**React to join!** Players needed: 7\n\n"
+        "**DETAILS:**\n"
+        f"📅 Date: Today\n"
+        f"⏰ Time: As soon as 7 players join\n"
+        f"👥 Players needed: 7\n"
+        f"🔥 Host: {author.mention}\n"
+        f"🎮 Players: —"
+    )
 
     channel = bot.get_channel(FRIENDLY_CHANNEL_ID)
-    msg = await channel.send(embed=embed)
+    msg = await channel.send(text)
 
-    friendly_matches[msg.id] = {"host": None, "players": []}
+    # Сохраняем матч
+    friendly_matches[msg.id] = {"host": author.id, "players": []}
+
     await interaction.response.send_message("✅ Friendly match created!", ephemeral=True)
+
+# ---------------------- Реакции для добавления игроков ----------------------
+@bot.event
+async def on_reaction_add(reaction, user):
+    if user.bot:
+        return
+
+    msg_id = reaction.message.id
+    if msg_id not in friendly_matches:
+        return
+
+    match = friendly_matches[msg_id]
+
+    if user.id in match["players"]:
+        return
+
+    match["players"].append(user.id)
+
+    # Обновляем сообщение с новым списком игроков
+    channel = reaction.message.channel
+    players_mentions = ", ".join([f"<@{pid}>" for pid in match["players"]])
+    players_needed = max(7 - len(match["players"]), 0)
+    host_mention = f"<@{match['host']}>" if match["host"] else "None"
+
+    text = (
+        "✅ **FRIENDLY MATCH REMINDER** ✅\n\n"
+        "**React to join!** Players needed: 7\n\n"
+        "**DETAILS:**\n"
+        f"📅 Date: Today\n"
+        f"⏰ Time: As soon as 7 players join\n"
+        f"👥 Players needed: {players_needed}\n"
+        f"🔥 Host: {host_mention}\n"
+        f"🎮 Players: {players_mentions or '—'}"
+    )
+
+    await reaction.message.edit(content=text)
 
 # ---------------------- Bot Start ----------------------
 @bot.event
