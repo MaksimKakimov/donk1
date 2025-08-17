@@ -20,6 +20,7 @@ B_TEAM_ROLE_ID = int(os.environ.get("B_TEAM_ROLE_ID"))
 A_TEAM_ROLE_ID = int(os.environ.get("A_TEAM_ROLE_ID"))
 MAIN_SUB_ROLE_ID = int(os.environ.get("MAIN_SUB_ROLE_ID"))
 MAIN_TEAM_ROLE_ID = int(os.environ.get("MAIN_TEAM_ROLE_ID"))
+FRIENDLY_PING_ROLE_ID = int(os.environ.get("FRIENDLY_PING_ROLE_ID"))
 # -------------------------------------------------------
 
 intents = discord.Intents.default()
@@ -31,7 +32,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 friendly_matches = {}  # {message_id: {"host": user_id, "players": [], "positions": {}, "pos_msg_id": int}}
 POSITIONS = ["GK", "LB", "RB", "CB", "LW", "RW", "ST"]
 
-# ---------------------- /match command ----------------------
+# ---------------------- /match ----------------------
 @bot.tree.command(name="match", description="Send match schedule")
 @app_commands.describe(
     team1="First team", 
@@ -44,12 +45,10 @@ async def match(interaction: discord.Interaction, team1: str, team2: str, league
     try:
         match_datetime = datetime.datetime.strptime(f"{date} {time}", "%d-%m-%Y %H:%M")
         timestamp = f"<t:{int(match_datetime.timestamp())}:F>"
-
         embed = discord.Embed(title="📢 Match Announcement", color=0x2ecc71)
         embed.add_field(name="🏟 Teams", value=f"{team1} vs {team2}", inline=False)
         embed.add_field(name="🏆 League", value=league, inline=False)
         embed.add_field(name="📅 Date & Time", value=timestamp, inline=False)
-
         channel = bot.get_channel(ANNOUNCE_CHANNEL_ID)
         if channel:
             await channel.send(embed=embed)
@@ -62,14 +61,10 @@ async def match(interaction: discord.Interaction, team1: str, team2: str, league
 # ---------------------- /trialresult ----------------------
 @bot.tree.command(name="trialresult", description="Post trial result")
 @app_commands.describe(
-    nickname="Player nickname",
-    position="Player position",
-    shooting="Shooting rating",
-    passing="Passing rating",
-    mossing="Mossing rating",
-    dribbling="Dribbling rating (optional)",
-    defending="Defending rating (optional)",
-    result="Trial result role"
+    nickname="Player nickname", position="Player position",
+    shooting="Shooting rating", passing="Passing rating",
+    mossing="Mossing rating", dribbling="Dribbling rating (optional)",
+    defending="Defending rating (optional)", result="Trial result role"
 )
 @app_commands.choices(result=[
     app_commands.Choice(name="B TEAM", value="B_TEAM"),
@@ -77,27 +72,24 @@ async def match(interaction: discord.Interaction, team1: str, team2: str, league
     app_commands.Choice(name="MAIN TEAM SUBS", value="MAIN_SUB"),
     app_commands.Choice(name="MAIN TEAM", value="MAIN_TEAM"),
 ])
-async def trialresult(interaction: discord.Interaction, nickname: str, position: str, shooting: str, passing: str, mossing: str, result: app_commands.Choice[str], dribbling: str = None, defending: str = None):
+async def trialresult(interaction: discord.Interaction, nickname: str, position: str,
+                      shooting: str, passing: str, mossing: str,
+                      result: app_commands.Choice[str], dribbling: str = None, defending: str = None):
     embed = discord.Embed(title="📝 Trial Result", color=0x3498db)
     embed.add_field(name="🎮 Nickname", value=nickname, inline=True)
     embed.add_field(name="📌 Position", value=position, inline=True)
     embed.add_field(name="⚽ Shooting", value=shooting, inline=True)
     embed.add_field(name="🎯 Passing", value=passing, inline=True)
     embed.add_field(name="🪂 Mossing", value=mossing, inline=True)
-    if dribbling:
-        embed.add_field(name="🌀 Dribbling", value=dribbling, inline=True)
-    if defending:
-        embed.add_field(name="🛡 Defending", value=defending, inline=True)
-
+    if dribbling: embed.add_field(name="🌀 Dribbling", value=dribbling, inline=True)
+    if defending: embed.add_field(name="🛡 Defending", value=defending, inline=True)
     result_role = {
         "B_TEAM": f"<@&{B_TEAM_ROLE_ID}>",
         "A_TEAM": f"<@&{A_TEAM_ROLE_ID}>",
         "MAIN_SUB": f"<@&{MAIN_SUB_ROLE_ID}>",
         "MAIN_TEAM": f"<@&{MAIN_TEAM_ROLE_ID}>",
     }[result.value]
-
     embed.add_field(name="📊 Result", value=result_role, inline=False)
-
     channel = bot.get_channel(TRIAL_RESULT_CHANNEL_ID)
     await channel.send(embed=embed)
     await interaction.response.send_message("✅ Trial result posted!", ephemeral=True)
@@ -105,10 +97,8 @@ async def trialresult(interaction: discord.Interaction, nickname: str, position:
 # ---------------------- /friendlyresult ----------------------
 @bot.tree.command(name="friendlyresult", description="Post friendly match result")
 @app_commands.describe(
-    score="Match score (e.g. 3-2)",
-    goals="Goals in format: @User:2 @Another:1",
-    assists="Assists in format: @User:1 @Another:2",
-    motm="Man of the Match (@mention)",
+    score="Match score (e.g. 3-2)", goals="Goals: @User:2 @Another:1",
+    assists="Assists: @User:1 @Another:2", motm="Man of the Match (@mention)",
     dotm="Defender of the Match (@mention)"
 )
 async def friendlyresult(interaction: discord.Interaction, score: str, goals: str, assists: str, motm: str, dotm: str):
@@ -123,14 +113,12 @@ async def friendlyresult(interaction: discord.Interaction, score: str, goals: st
         return stats
     def format_stats(stats: dict):
         return ", ".join([f"{user} ({count})" for user, count in stats.items()]) if stats else "—"
-
     embed = discord.Embed(title="⚡ Friendly Match Result", color=0xf1c40f)
     embed.add_field(name="📊 Score", value=score, inline=False)
     embed.add_field(name="⚽ Goals", value=format_stats(parse_stats(goals)), inline=False)
     embed.add_field(name="🎯 Assists", value=format_stats(parse_stats(assists)), inline=False)
     embed.add_field(name="🏅 MOTM", value=motm, inline=True)
     embed.add_field(name="🛡 DOTM", value=dotm, inline=True)
-
     channel = bot.get_channel(FRIENDLY_RESULT_CHANNEL_ID)
     await channel.send(embed=embed)
     await interaction.response.send_message("✅ Friendly result posted!", ephemeral=True)
@@ -138,15 +126,12 @@ async def friendlyresult(interaction: discord.Interaction, score: str, goals: st
 # ---------------------- /leagueresult ----------------------
 @bot.tree.command(name="leagueresult", description="Post league match result")
 @app_commands.describe(
-    team1="First team",
-    team2="Second team",
-    score="Match score (e.g. 3-2)",
-    goals="Goals in format: @User:2 @Another:1",
-    assists="Assists in format: @User:1 @Another:2",
-    motm="Man of the Match (@mention)",
-    dotm="Defender of the Match (@mention)"
+    team1="First team", team2="Second team", score="Match score (e.g. 3-2)",
+    goals="Goals: @User:2 @Another:1", assists="Assists: @User:1 @Another:2",
+    motm="Man of the Match (@mention)", dotm="Defender of the Match (@mention)"
 )
-async def leagueresult(interaction: discord.Interaction, team1: str, team2: str, score: str, goals: str, assists: str, motm: str, dotm: str):
+async def leagueresult(interaction: discord.Interaction, team1: str, team2: str, score: str,
+                        goals: str, assists: str, motm: str, dotm: str):
     def parse_stats(raw: str):
         stats = {}
         for part in raw.split():
@@ -158,7 +143,6 @@ async def leagueresult(interaction: discord.Interaction, team1: str, team2: str,
         return stats
     def format_stats(stats: dict):
         return ", ".join([f"{user} ({count})" for user, count in stats.items()]) if stats else "—"
-
     embed = discord.Embed(title="🏆 League Match Result", color=0xe74c3c)
     embed.add_field(name="⚔ Teams", value=f"{team1} vs {team2}", inline=False)
     embed.add_field(name="📊 Score", value=score, inline=False)
@@ -166,7 +150,6 @@ async def leagueresult(interaction: discord.Interaction, team1: str, team2: str,
     embed.add_field(name="🎯 Assists", value=format_stats(parse_stats(assists)), inline=False)
     embed.add_field(name="🏅 MOTM", value=motm, inline=True)
     embed.add_field(name="🛡 DOTM", value=dotm, inline=True)
-
     channel = bot.get_channel(LEAGUE_RESULT_CHANNEL_ID)
     await channel.send(embed=embed)
     await interaction.response.send_message("✅ League result posted!", ephemeral=True)
@@ -176,12 +159,11 @@ async def leagueresult(interaction: discord.Interaction, team1: str, team2: str,
 async def friendly(interaction: discord.Interaction):
     author = interaction.user
     if HOST_ROLE_ID not in [role.id for role in author.roles]:
-        await interaction.response.send_message(
-            "❌ You need the host role to start a friendly match.", ephemeral=True
-        )
+        await interaction.response.send_message("❌ You need the host role!", ephemeral=True)
         return
 
     text = (
+        f"<@&{FRIENDLY_PING_ROLE_ID}>\n"
         "✅ **FRIENDLY MATCH** ✅\n\n"
         f"🔥 Host: {author.mention}\n"
         f"👥 Players needed: 7\n"
@@ -196,20 +178,16 @@ async def friendly(interaction: discord.Interaction):
         "positions": {pos: None for pos in POSITIONS},
         "pos_msg_id": None
     }
-
     await interaction.response.send_message("✅ Friendly match created!", ephemeral=True)
 
-# ---------------------- Реакции для добавления игроков ----------------------
+# ---------------------- Reactions ----------------------
 @bot.event
 async def on_reaction_add(reaction, user):
-    if user.bot:
-        return
+    if user.bot: return
     msg_id = reaction.message.id
-    if msg_id not in friendly_matches:
-        return
+    if msg_id not in friendly_matches: return
     match = friendly_matches[msg_id]
-    if user.id in match["players"]:
-        return
+    if user.id in match["players"]: return
     match["players"].append(user.id)
 
     # Обновляем сообщение о игроках
@@ -217,16 +195,9 @@ async def on_reaction_add(reaction, user):
     players_mentions = ", ".join([f"<@{pid}>" for pid in match["players"]])
     players_needed = max(7 - len(match["players"]), 0)
     host_mention = f"<@{match['host']}>"
-
-    text = (
-        "✅ **FRIENDLY MATCH** ✅\n\n"
-        f"🔥 Host: {host_mention}\n"
-        f"👥 Players needed: {players_needed}\n"
-        f"🎮 Players: {players_mentions or '—'}"
-    )
+    text = f"<@&{FRIENDLY_PING_ROLE_ID}>\n✅ **FRIENDLY MATCH** ✅\n\n🔥 Host: {host_mention}\n👥 Players needed: {players_needed}\n🎮 Players: {players_mentions or '—'}"
     await reaction.message.edit(content=text)
 
-    # Если набрались 7 игроков — создаем сообщение с позициями
     if len(match["players"]) == 7 and match["pos_msg_id"] is None:
         pos_text = "**📌 Positions:**\n"
         for i, pos in enumerate(POSITIONS):
@@ -235,17 +206,13 @@ async def on_reaction_add(reaction, user):
         pos_msg = await channel.send(pos_text)
         match["pos_msg_id"] = pos_msg.id
 
-# ---------------------- Реакции для удаления игроков ----------------------
 @bot.event
 async def on_reaction_remove(reaction, user):
-    if user.bot:
-        return
+    if user.bot: return
     msg_id = reaction.message.id
-    if msg_id not in friendly_matches:
-        return
+    if msg_id not in friendly_matches: return
     match = friendly_matches[msg_id]
-    if user.id not in match["players"]:
-        return
+    if user.id not in match["players"]: return
     match["players"].remove(user.id)
 
     # Обновляем сообщение о игроках
@@ -253,16 +220,9 @@ async def on_reaction_remove(reaction, user):
     players_mentions = ", ".join([f"<@{pid}>" for pid in match["players"]])
     players_needed = max(7 - len(match["players"]), 0)
     host_mention = f"<@{match['host']}>"
-
-    text = (
-        "✅ **FRIENDLY MATCH** ✅\n\n"
-        f"🔥 Host: {host_mention}\n"
-        f"👥 Players needed: {players_needed}\n"
-        f"🎮 Players: {players_mentions or '—'}"
-    )
+    text = f"<@&{FRIENDLY_PING_ROLE_ID}>\n✅ **FRIENDLY MATCH** ✅\n\n🔥 Host: {host_mention}\n👥 Players needed: {players_needed}\n🎮 Players: {players_mentions or '—'}"
     await reaction.message.edit(content=text)
 
-    # Обновляем сообщение с позициями
     if match["pos_msg_id"]:
         pos_msg = await channel.fetch_message(match["pos_msg_id"])
         pos_text = "**📌 Positions:**\n"
