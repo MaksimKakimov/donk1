@@ -30,10 +30,15 @@ intents.reactions = True
 intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-friendly_matches = {}  # {message_id: {"host": user_id, "players": []}}
+friendly_matches = {}  # {message_id: {"host": user_id, "players": [], "positions": {}}}
 
-# ---------------------- /match ----------------------
-@bot.tree.command(name="match", description="Send match schedule")
+POSITIONS = ["GK", "LB", "RB", "CB", "LW", "RW", "ST"]
+
+# ---------------------- /match command ----------------------
+@bot.tree.command(
+    name="match", 
+    description="Send match schedule"
+)
 @app_commands.describe(
     team1="First team", 
     team2="Second team", 
@@ -172,37 +177,78 @@ async def leagueresult(interaction: discord.Interaction, team1: str, team2: str,
     await channel.send(embed=embed)
     await interaction.response.send_message("✅ League result posted!", ephemeral=True)
 
-# ---------------------- Авто-удаление и оформление сообщений с Roblox ----------------------
-@bot.event
-async def on_message(message):
-    if message.author.bot:
+# ---------------------- /friendly command ----------------------
+@bot.tree.command(name="friendly", description="Start a friendly match")
+async def friendly(interaction: discord.Interaction):
+    author = interaction.user
+    if HOST_ROLE_ID not in [role.id for role in author.roles]:
+        await interaction.response.send_message(
+            "❌ You need the host role to start a friendly match.", ephemeral=True
+        )
         return
-    if message.channel.id != FRIENDLY_CHANNEL_ID:
-        return
-    # Проверка ссылки Roblox
-    if re.search(r"(https?://)?(www\.)?(roblox\.com|rbx\.gg)/\S+", message.content):
-        try:
-            await message.delete()
-            text = (
-                f"<@&{FRIENDLY_PING_ROLE_ID}>\n"
-                "🎮 **FRIENDLY MATCH ALERT!** 🎮\n\n"
-                f"🔥 Host: {message.author.mention}\n"
-                f"🌐 Game link: {message.content}\n"
-                "👥 Players needed: 7\n"
-                "📝 Join the game and have fun! 🎉"
-            )
-            await message.channel.send(text)
-        except Exception as e:
-            print(f"Error deleting message: {e}")
 
-# ---------------------- Bot Start ----------------------
+    # Текстовое сообщение вместо embed
+    text = (
+        "✅ **FRIENDLY MATCH** ✅\n\n"
+        f"🔥 **ХОСТ:** {author.mention}\n"
+        f"👥 **ПЛЕЙРС НЕЕД:** 7\n"
+        f"🎮 **ПЛЕЙРС:** —"
+    )
+
+    channel = bot.get_channel(FRIENDLY_CHANNEL_ID)
+    msg = await channel.send(text)
+
+    friendly_matches[msg.id] = {"host": author.id, "players": [], "positions": {pid: None for pid in POSITIONS}}
+
+    await interaction.response.send_message("✅ Friendly match created!", ephemeral=True)
+
+# ---------------------- Reaction handling ----------------------
 @bot.event
-async def on_ready():
-    print(f"✅ Logged in as {bot.user}")
-    try:
-        synced = await bot.tree.sync()
-        print(f"Slash commands synced: {len(synced)}")
-    except Exception as e:
-        print(e)
+async def on_reaction_add(reaction, user):
+    if user.bot:
+        return
 
-bot.run(TOKEN)
+    msg_id = reaction.message.id
+    if msg_id not in friendly_matches:
+        return
+
+    match = friendly_matches[msg_id]
+
+    if user.id in match["players"]:
+        return
+
+    # Добавляем игрока
+    match["players"].append(user.id)
+
+    # Обновляем текст
+    players_mentions = ", ".join([f"<@{pid}>" for pid in match["players"]])
+    players_needed = max(7 - len(match["players"]), 0)
+    host_mention = f"<@{match['host']}>"
+
+    text = (
+        "✅ **FRIENDLY MATCH** ✅\n\n"
+        f"🔥 **ХОСТ:** {host_mention}\n"
+        f"👥 **ПЛЕЙРС НЕЕД:** {players_needed}\n"
+        f"🎮 **ПЛЕЙРС:** {players_mentions or '—'}"
+    )
+
+    await reaction.message.edit(content=text)
+
+@bot.event
+async def on_reaction_remove(reaction, user):
+    if user.bot:
+        return
+
+    msg_id = reaction.message.id
+    if msg_id not in friendly_matches:
+        return
+
+    match = friendly_matches[msg_id]
+
+    if user.id in match["players"]:
+        match["players"].remove(user.id)
+
+    # Обновляем текст
+    players_mentions = ", ".join([f"<@{pid}>" for pid in match["players"]])
+    players_needed = max(7 - len(match["players"]), 0)
+    host_
